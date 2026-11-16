@@ -5,10 +5,17 @@ está escrita.
 O arquivo cresce ao longo da trilha, sempre **acrescentando** uma seção ao
 final. Nenhum teste escrito em um dia é alterado nos dias seguintes.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+import pytest
 
 from app.enums import PrioridadeTarefa, StatusTarefa
+from app.exceptions import ValorInvalido
 from app.models import Tarefa, Usuario
+# ============================================================================= 
+# Dia 2 — `pytest.raises`: o que o objeto recusa 
+# =============================================================================
+
+
 def nova_tarefa(**ajustes) -> Tarefa:
  """Cria uma tarefa válida, permitindo sobrescrever campos pontualmente.
  Esta função não é um teste — é uma **fábrica**.
@@ -16,14 +23,17 @@ def nova_tarefa(**ajustes) -> Tarefa:
  dados = {"usuario_id": 1, "titulo": "Estudar orientação a objetos"}
  dados.update(ajustes)
  return Tarefa(**dados)
+
 def novo_usuario(**ajustes) -> Usuario:
  """Cria um usuário válido, permitindo sobrescrever campos pontualmente."""
  dados = {"nome": "Ana Souza", "email": "ana@exemplo.com"}
  dados.update(ajustes)
  return Usuario(**dados)
+
 # =============================================================================
 # Dia 1 — `assert`: o que o objeto faz
 # =============================================================================
+
 def test_tarefa_nasce_pendente_e_sem_data_de_conclusao():
  """RN-02: toda tarefa nasce pendente."""
  tarefa = nova_tarefa()
@@ -32,19 +42,23 @@ def test_tarefa_nasce_pendente_e_sem_data_de_conclusao():
  
 def test_titulo_e_gravado_sem_espacos_nas_pontas():
     assert nova_tarefa(titulo=" Revisar ").titulo == "Revisar"
+
 def test_prioridade_aceita_enum_e_texto():
     assert nova_tarefa(prioridade=PrioridadeTarefa.ALTA).prioridade == "alta"
     assert nova_tarefa(prioridade="baixa").prioridade == "baixa"
     
 def test_tarefa_sem_prazo_nunca_esta_atrasada():
  assert nova_tarefa(prazo=None).esta_atrasada() is False
+
 def test_tarefa_com_prazo_vencido_e_pendente_esta_atrasada():
  ontem = date.today() - timedelta(days=1)
  assert nova_tarefa(prazo=ontem).esta_atrasada() is True
+
 def test_pertence_a():
  tarefa = nova_tarefa(usuario_id=7)
  assert tarefa.pertence_a(7) is True
  assert tarefa.pertence_a(8) is False
+
 def test_ordem_das_prioridades_vai_da_mais_urgente_para_a_menos():
     """Ordenar pelo texto daria "alta, baixa, media, urgente".
     O peso existe para que a ordenação siga o que o usuário espera, e não o
@@ -64,3 +78,93 @@ def test_email_e_normalizado_na_criacao():
     
 def test_nome_e_gravado_sem_espacos_nas_pontas():
     assert novo_usuario(nome=" Ana Souza ").nome == "Ana Souza"
+    
+def test_status_e_somente_leitura(): 
+    """A única porta para mudar o status são `concluir` e `reabrir`.""" 
+    tarefa = nova_tarefa() 
+    with pytest.raises(AttributeError):
+        tarefa.status = StatusTarefa.CONCLUIDA
+        
+def test_construtor_nao_aceita_status_como_parametro(): 
+    """RN-02: não existe forma de criar uma tarefa já concluída.""" 
+    with pytest.raises(TypeError): 
+        Tarefa(usuario_id=1, titulo="X", status=StatusTarefa.CONCLUIDA) 
+  
+  
+def test_construtor_exige_argumentos_nomeados(): 
+    """`Usuario("Ana", "ana@exemplo.com")` é erro, e de propósito: nome e 
+    e-mail são os dois texto, e uma troca entre eles não seria pega por 
+    nenhuma verificação de tipo.""" 
+    with pytest.raises(TypeError): 
+        Usuario("Ana Souza", "ana@exemplo.com") 
+  
+  
+def test_construtor_nao_aceita_senha(): 
+    """A senha não tem como entrar sem passar pelo hash. 
+  
+    Este teste protege uma decisão de projeto, não um cálculo. Se alguém 
+    acrescentar `senha` ao construtor por conveniência, a suíte avisa. 
+    """ 
+    with pytest.raises(TypeError): 
+        Usuario(nome="Ana", email="ana@exemplo.com", senha="senha123")
+        
+def test_prioridade_invalida_e_recusada(): 
+    with pytest.raises(ValorInvalido): 
+        nova_tarefa(prioridade="altissima") 
+  
+  
+def test_nome_invalido_e_recusado_tambem_depois_da_criacao(): 
+    """A validação não vale só no construtor. 
+  
+    É o que diferencia `@validates` de uma checagem feita dentro do `__init__`: 
+    a regra passa a valer em qualquer atribuição, em qualquer lugar do sistema. 
+    """ 
+    usuario = novo_usuario() 
+    with pytest.raises(ValorInvalido): 
+        usuario.nome = "   "
+        
+        # ------------------------------------- RN-03: o ciclo de vida da data de conclusão 
+  
+def test_concluir_registra_a_data(): 
+    tarefa = nova_tarefa() 
+    tarefa.concluir() 
+    assert tarefa.status is StatusTarefa.CONCLUIDA 
+    assert tarefa.concluido_em is not None 
+  
+  
+def test_reabrir_apaga_a_data(): 
+    tarefa = nova_tarefa() 
+    tarefa.concluir() 
+    tarefa.reabrir() 
+    assert tarefa.status is StatusTarefa.PENDENTE 
+    assert tarefa.concluido_em is None 
+  
+  
+def test_editar_outro_campo_nao_mexe_na_data_de_conclusao(): 
+    tarefa = nova_tarefa() 
+    tarefa.concluir(agora=datetime(2026, 1, 10, 9, 0, 0)) 
+    antes = tarefa.concluido_em 
+    tarefa.titulo = "Título novo" 
+    assert tarefa.concluido_em == antes 
+  
+  
+def test_definir_status_encaminha_para_a_operacao_correta(): 
+    tarefa = nova_tarefa() 
+    tarefa.definir_status("concluida") 
+    assert tarefa.concluido_em is not None 
+    tarefa.definir_status(StatusTarefa.PENDENTE)
+    assert tarefa.concluido_em is None  
+    
+def test_tarefa_concluida_nao_esta_atrasada_mesmo_com_prazo_vencido():   
+    tarefa = nova_tarefa(prazo=date.today() - timedelta(days=5)) 
+    tarefa.concluir() 
+    assert tarefa.esta_atrasada() is False 
+  
+  
+def test_tarefas_pendentes_filtra_as_concluidas(): 
+    usuario = novo_usuario() 
+    pendente = nova_tarefa(titulo="Pendente") 
+    concluida = nova_tarefa(titulo="Concluída") 
+    concluida.concluir() 
+    usuario.tarefas = [pendente, concluida] 
+    assert usuario.tarefas_pendentes() == [pendente]
