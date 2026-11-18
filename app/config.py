@@ -173,8 +173,15 @@ class Configuracao:
         database_url = os.getenv("DATABASE_URL", "").strip()
 
         if not database_url:
-            database_url = "sqlite:///./todo_list.db"
-
+            raise RuntimeError(
+                "A variável de ambiente DATABASE_URL não foi definida.\n"
+                f"Esperado um arquivo .env em: {CAMINHO_DO_ENV}\n"
+                "Ela define qual banco a aplicação usa: sem ela, não há como "
+                "saber se o .env foi lido ou se o banco é o pretendido.\n"
+                "Exemplo para desenvolvimento local:\n"
+                "    DATABASE_URL=sqlite:///./todo_list.db"
+            )
+        
         segredo_jwt = os.getenv("JWT_SECRET", "").strip()
 
         if not segredo_jwt:
