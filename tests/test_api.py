@@ -61,7 +61,7 @@ def test_cadastro_nao_expoe_a_senha(cliente: TestClient):
     assert "senha123" not in inteiro 
     assert "senhaHash" not in inteiro and "senha_hash" not in inteiro
     
-    def test_cadastrar_com_email_repetido_devolve_409(cliente: TestClient): 
+def test_cadastrar_com_email_repetido_devolve_409(cliente: TestClient): 
     """409 Conflict: o pedido está correto, o estado atual é que não permite.""" 
     cliente.post("/usuarios", json=USUARIO_VALIDO) 
     resposta = cliente.post("/usuarios", json=USUARIO_VALIDO) 

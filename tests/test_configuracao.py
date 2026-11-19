@@ -222,7 +222,7 @@ def test_segredo_proprio_e_aceito_com_banco_de_servidor(monkeypatch):
     assert Configuracao.do_ambiente().banco_em_servidor is True 
   
   
-@pytest.mark.parametrize("curto", ["x", "segredo", "a" * 32]) 
+@pytest.mark.parametrize("curto", ["x", "segredo", "a" * 31]) 
 def test_segredo_curto_e_recusado(monkeypatch, curto): 
     """RFC 7518, seção 3.2: chave HMAC-SHA256 precisa de 256 bits (32 bytes). 
   

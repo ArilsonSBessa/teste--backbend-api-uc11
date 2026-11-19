@@ -68,10 +68,10 @@ def banco_limpo():
     inclusive se o teste falhar. 
     """ 
     
-    #Base.metadata.drop_all(bind=engine) 
+    Base.metadata.drop_all(bind=engine) 
     criar_tabelas() 
     yield 
-    #Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=engine)
     
     
 # ============================================================================= 
