@@ -180,15 +180,22 @@ def tarefa_de(cliente: TestClient, conta: dict, titulo: str) -> dict:
     return resposta.json()
 
 
-def test_as_duas_contas_sao_diferentes(sessao_aberta: dict, outro_usuario: dict):
-    """Pré-condição dos testes abaixo: são mesmo duas contas.
+def test_a_listagem_so_traz_as_tarefas_do_dono_do_token(
+    cliente: TestClient, sessao_aberta: dict, outro_usuario: dict
+):
+    """Cada conta, ao listar, vê só o que é dela.
 
-    Se as duas fixtures devolvessem o mesmo usuário, os testes de isolamento
-    passariam ou falhariam pelo motivo errado.
+    As duas contas têm tarefas no mesmo banco. O que separa uma da outra não é
+    a tabela, é o token: a listagem filtra pelo usuário que ele identifica.
     """
-    assert sessao_aberta["usuario"]["id"] != outro_usuario["usuario"]["id"]
-    assert sessao_aberta["accessToken"] != outro_usuario["accessToken"]
+    tarefa_de(cliente, sessao_aberta, "Tarefa da Ana")
+    tarefa_de(cliente, outro_usuario, "Tarefa do Bruno")
 
+    resposta = cliente.get(
+        "/tasks",
+        headers={"Authorization": f"Bearer {sessao_aberta['accessToken']}"},
+    )
+    assert [t["titulo"] for t in resposta.json()] == ["Tarefa da Ana"]
 
 def test_nao_se_altera_a_tarefa_de_outra_conta(
     cliente: TestClient, sessao_aberta: dict, outro_usuario: dict
