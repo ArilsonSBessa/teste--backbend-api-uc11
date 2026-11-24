@@ -32,9 +32,6 @@ def tokens() -> TokenDeAcesso:
     return TokenDeAcesso(segredo=SEGREDO, validade=timedelta(hours=1))
 
 
-
-
-
 # =============================================================================
 # Dia 4 — a mecânica do token, sem HTTP
 # =============================================================================
@@ -165,3 +162,98 @@ def test_openapi_declara_o_esquema_bearer(cliente: TestClient):
     esquema = cliente.get("/openapi.json").json()
     esquemas = esquema["components"].get("securitySchemes", {})
     assert any(definicao.get("scheme") == "bearer" for definicao in esquemas.values())
+
+
+
+def tarefa_de(cliente: TestClient, conta: dict, titulo: str) -> dict:
+    """Cria uma tarefa **em nome de** `conta` e devolve o JSON dela.
+
+    É uma função comum, não uma fixture: cada teste diz de quem é a tarefa e
+    qual o título. O `assert` é uma pré-condição, como na `sessao_aberta`.
+    """
+    resposta = cliente.post(
+        "/tasks",
+        json={"titulo": titulo},
+        headers={"Authorization": f"Bearer {conta['accessToken']}"},
+    )
+    assert resposta.is_success, resposta.text
+    return resposta.json()
+
+
+def test_as_duas_contas_sao_diferentes(sessao_aberta: dict, outro_usuario: dict):
+    """Pré-condição dos testes abaixo: são mesmo duas contas.
+
+    Se as duas fixtures devolvessem o mesmo usuário, os testes de isolamento
+    passariam ou falhariam pelo motivo errado.
+    """
+    assert sessao_aberta["usuario"]["id"] != outro_usuario["usuario"]["id"]
+    assert sessao_aberta["accessToken"] != outro_usuario["accessToken"]
+
+
+def test_nao_se_altera_a_tarefa_de_outra_conta(
+    cliente: TestClient, sessao_aberta: dict, outro_usuario: dict
+):
+    """Com um token válido, a conta da Ana tenta editar a tarefa do Bruno.
+
+    Estar autenticado não é o mesmo que ter permissão: a API sabe **quem** é a
+    Ana (não é 401), e por isso mesmo deve recusar (403).
+    """
+    alheia = tarefa_de(cliente, outro_usuario, "Tarefa do Bruno")
+
+    resposta = cliente.patch(
+        f"/tasks/{alheia['id']}",
+        json={"titulo": "Invadida"},
+        headers={"Authorization": f"Bearer {sessao_aberta['accessToken']}"},
+    )
+    assert resposta.status_code == 403
+
+
+def test_nao_se_apaga_a_tarefa_de_outra_conta(
+    cliente: TestClient, sessao_aberta: dict, outro_usuario: dict
+):
+    """A mesma verificação no `DELETE`, e ela precisa ser testada à parte.
+
+    `PATCH` e `DELETE` são dois caminhos no código. Um deles podia ter a
+    verificação e o outro não.
+    """
+    alheia = tarefa_de(cliente, outro_usuario, "Tarefa do Bruno")
+
+    resposta = cliente.delete(
+        f"/tasks/{alheia['id']}",
+        headers={"Authorization": f"Bearer {sessao_aberta['accessToken']}"},
+    )
+    assert resposta.status_code == 403
+
+
+def test_a_tarefa_recusada_continua_intacta(
+    cliente: TestClient, sessao_aberta: dict, outro_usuario: dict
+):
+    """Recusar não é o bastante: é preciso que nada tenha mudado.
+
+    Um 403 devolvido *depois* de gravar a alteração seria **pior do que não
+    ter verificação nenhuma**, porque pareceria seguro. A resposta é uma
+    evidência do que aconteceu, não a prova. A prova é olhar o estado depois.
+    """
+    dele = {"Authorization": f"Bearer {outro_usuario['accessToken']}"}
+    alheia = tarefa_de(cliente, outro_usuario, "Original")
+
+    cliente.patch(
+        f"/tasks/{alheia['id']}",
+        json={"titulo": "Invadida"},
+        headers={"Authorization": f"Bearer {sessao_aberta['accessToken']}"},
+    )
+
+    depois = cliente.get("/tasks", headers=dele).json()
+    assert [t["titulo"] for t in depois] == ["Original"]
+
+
+def test_tarefa_inexistente_responde_404_e_nao_403(
+    cliente_logado: TestClient,
+):
+    """404 é "não existe"; 403 é "existe e não é sua".
+
+    Responder 403 confirma que a tarefa **existe**, o que é um vazamento
+    pequeno mas real. Este projeto escolheu a clareza para quem integra, e a
+    decisão está registrada no manual técnico.
+    """
+    assert cliente_logado.delete("/tasks/9999").status_code == 404
